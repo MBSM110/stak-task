@@ -165,3 +165,5 @@ dist
 .env*
 !.env.example
 .wrangler/
+
+stak-task-09ba1c45c7d8.json
