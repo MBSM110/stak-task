@@ -41,19 +41,19 @@ npx wrangler publish
 
 ## Architecture Overview
 
-```
-hello-worker/
+```plaintext
+Stak-task/
 │
 ├── src/
 │   ├── index.js         <-- main worker logic
 │   ├── firebase.js      <-- Firestore access & token management
+│   ├── routes.js        <-- request routing / endpoint handlers
 │   └── utils.js         <-- helper functions (optional)
 │
 ├── wrangler.toml        <-- Cloudflare Worker configuration
 ├── package.json         <-- dependencies & scripts
 ├── .env.example         <-- example environment variables
 └── README.md            <-- project documentation
-```
 
 ---
 
