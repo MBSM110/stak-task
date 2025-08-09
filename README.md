@@ -64,7 +64,7 @@ Stak-task/
 
 ### **Windows CMD Example**
 ```cmd
-curl -X POST "https://stak-task.mbagher.workers.dev/itinerary" -H "Content-Type: application/json" -d "{"destination":"Rasht, Iran", "durationDays":5}"
+curl -X POST "https://stak-task.mbagher.workers.dev/itinerary" -H "Content-Type: application/json" -d "{\"destination\":\"Rasht, Iran\", \"durationDays\":5}"
 ```
 
 ### **Linux / macOS Example**
