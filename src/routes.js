@@ -44,6 +44,7 @@ export async function handleRequest(request, env, ctx) {
       const jobId = generateUUID();
       const now = new Date().toISOString();
 
+      // Save initial document
       await createDocument(token, projectId, collection, jobId, {
         status: 'processing',
         destination: destination,
@@ -57,8 +58,96 @@ export async function handleRequest(request, env, ctx) {
       ctx.waitUntil(
         (async () => {
           try {
-            await delay(15000); // 15s delay for testing
+            // --- Call OpenAI ---
+            const prompt = `
+Generate a detailed ${durationDays}-day travel itinerary for ${destination}.
+Return ONLY JSON in this format:
+[
+  {
+    "day": 1,
+    "theme": "Theme of the day",
+    "activities": [
+      { "time": "Morning", "description": "Activity details", "location": "Location name" },
+      { "time": "Afternoon", "description": "Activity details", "location": "Location name" },
+      { "time": "Evening", "description": "Activity details", "location": "Location name" }
+    ]
+  }
+]
+Example for 2 days:
+[
+  {
+    "day": 1,
+    "theme": "Historical Paris",
+    "activities": [
+      { "time": "Morning", "description": "Visit the Louvre Museum. Pre-book tickets.", "location": "Louvre Museum" },
+      { "time": "Afternoon", "description": "Walk along the Seine and visit Notre-Dame.", "location": "Île de la Cité" },
+      { "time": "Evening", "description": "Dinner in the Latin Quarter.", "location": "Latin Quarter" }
+    ]
+  },
+  {
+    "day": 2,
+    "theme": "Art and Culture",
+    "activities": [
+      { "time": "Morning", "description": "Visit Musée d'Orsay.", "location": "Musée d'Orsay" },
+      { "time": "Afternoon", "description": "Explore Montmartre and Sacré-Cœur.", "location": "Montmartre" },
+      { "time": "Evening", "description": "See a cabaret show.", "location": "Moulin Rouge" }
+    ]
+  }
+]
+            `;
 
+            const llmRes = await fetch("https://api.openai.com/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${env.OPENAI_API_KEY}`
+              },
+              body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [{ role: "user", content: prompt }],
+                temperature: 0.7
+              })
+            });
+
+            if (!llmRes.ok) {
+              throw new Error(`OpenAI API error: ${await llmRes.text()}`);
+            }
+
+            const llmData = await llmRes.json();
+            let itinerary;
+
+            try {
+              itinerary = JSON.parse(llmData.choices[0].message.content);
+            } catch {
+              throw new Error("Invalid JSON from LLM");
+            }
+
+            // Save LLM result
+            await updateDocument(token, projectId, collection, jobId, {
+              status: 'completed',
+              destination: destination,
+              durationDays: durationDays,
+              createdAt: now,
+              completedAt: new Date().toISOString(),
+              itinerary,
+              error: null
+            });
+
+          } catch (err) {
+            // If LLM fails, set status to failed
+            await updateDocument(token, projectId, collection, jobId, {
+              status: 'failed',
+              destination: destination,
+              durationDays: durationDays,
+              createdAt: now,
+              completedAt: new Date().toISOString(),
+              itinerary: [],
+              error: err.message
+            });
+
+            /*
+            // --- Optional: fake itinerary fallback ---
+            await delay(15000); // 15s delay for testing
             const fakeItinerary = Array.from({ length: durationDays }, (_, i) => ({
               day: i + 1,
               theme: `Sample Day ${i + 1}`,
@@ -68,7 +157,6 @@ export async function handleRequest(request, env, ctx) {
                 { time: 'Evening', description: 'Sample dinner recommendation.', location: 'Dinner spot' }
               ]
             }));
-
             await updateDocument(token, projectId, collection, jobId, {
               status: 'completed',
               destination: destination,
@@ -78,11 +166,7 @@ export async function handleRequest(request, env, ctx) {
               itinerary: fakeItinerary,
               error: null
             });
-          } catch (err) {
-            await updateDocument(token, projectId, collection, jobId, {
-              status: 'failed',
-              error: err.message
-            });
+            */
           }
         })()
       );
@@ -97,27 +181,20 @@ export async function handleRequest(request, env, ctx) {
     }
   }
 
-  // GET /itinerary/:jobId → retrieve job status/result
+  // GET /itinerary/:jobId
   if (request.method === 'GET' && url.pathname.startsWith('/itinerary/')) {
     const jobId = url.pathname.split('/')[2];
-    if (!jobId) {
-      return new Response(JSON.stringify({ error: 'Missing jobId in URL.' }), { status: 400 });
-    }
-
-    const docUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collection}/${jobId}`;
-    const res = await fetch(docUrl, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/${collection}/${jobId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
 
     if (res.status === 404) {
-      return new Response(JSON.stringify({ error: 'Job not found.' }), { status: 404 });
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
     }
 
     const data = await res.json();
-    const cleanData = deserializeFields(data.fields || {});
-
-    return new Response(JSON.stringify(cleanData, null, 2), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    const doc = deserializeFields(data.fields || {});
+    return new Response(JSON.stringify(doc), { headers: { 'Content-Type': 'application/json' } });
   }
 
   return new Response('Not found', { status: 404 });
