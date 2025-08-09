@@ -54,6 +54,7 @@ Stak-task/
 ├── package.json         <-- dependencies & scripts
 ├── .env.example         <-- example environment variables
 └── README.md            <-- project documentation
+```
 
 ---
 
